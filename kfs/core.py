@@ -75,6 +75,13 @@ def list_entries(root: Path) -> Iterator[Entry]:
 
 
 def filter_entries(query: Query, entries: Iterator[Entry]) -> Iterator[Entry]:
+    def check_tags(metadata: Metadata) -> bool:
+        for x in query.tags:
+            if x not in metadata.tags:
+                return False
+
+        return True
+
     for entry in entries:
         carrier_file, metadata = entry
 
@@ -82,9 +89,8 @@ def filter_entries(query: Query, entries: Iterator[Entry]) -> Iterator[Entry]:
             if metadata.name != query.name:
                 continue
 
-        for x in query.tags:
-            if x not in metadata.tags:
-                continue
+        if not check_tags(metadata):
+            continue
 
         yield entry
 
