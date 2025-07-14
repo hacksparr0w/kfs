@@ -6,6 +6,8 @@ from typing import Iterator, Optional
 
 from pydantic import BaseModel, ValidationError
 
+from . import git
+
 
 __all__ = (
     "Entry",
@@ -106,5 +108,10 @@ def import_file(root: Path, external_file: Path, metadata: Metadata) -> Entry:
         ),
         encoding=DEFAULT_ENCODING
     )
+
+    if git.is_repository(cwd=root) and git.check_author(cwd=root):
+        git.add(str(carrier_file.name), cwd=root)
+        git.add(str(metadata_file.name), cwd=root)
+        git.commit(f"add '{metadata.name}'", cwd=root)
 
     return (carrier_file, metadata)
