@@ -4,8 +4,38 @@ import click
 
 from rich.console import Console
 
-from ..core import Metadata, Query, filter_entries, import_file, list_entries
+from ..base import TagIndex, Metadata, build_tag_index
+from ..core import (
+    Query,
+    filter_entries,
+    import_file,
+    list_entries
+)
+
+from ..cache import (
+    get_tag_index_cache_file,
+    read_tag_index_cache,
+    write_tag_index_cache
+)
+
+from ..system import ensure_system_directory
 from .format import print_entries
+
+
+def _initialize(root: Path) -> TagIndex:
+    ensure_system_directory(root)
+
+    tag_index_cache_file = get_tag_index_cache_file(root)
+    tag_index: TagIndex
+
+    if not tag_index_cache_file.exists():
+        entries = list_entries(root)
+        tag_index = build_tag_index(entries)
+        write_tag_index_cache(root, tag_index)
+    else:
+        tag_index = read_tag_index_cache(root)
+
+    return tag_index
 
 
 @click.group()
@@ -42,9 +72,14 @@ def cli(ctx, root):
 def im(ctx, tags, name, external_file):
     console = ctx.obj["console"]
     root = ctx.obj["root"]
+
+    tag_index = _initialize(root)
+
     name = name if name else external_file.name
-    metadata = Metadata(name=name, tags=tags)
-    entry = import_file(root, external_file, metadata)
+    metadata = Metadata(name=name, tags=set(tags))
+    tag_index, entry = import_file(root, tag_index, external_file, metadata)
+
+    write_tag_index_cache(root, tag_index)
 
     print_entries(console, [entry])
 

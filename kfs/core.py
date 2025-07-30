@@ -1,5 +1,4 @@
 import shutil
-import uuid
 
 from pathlib import Path
 from typing import Iterator, Optional
@@ -7,16 +6,25 @@ from typing import Iterator, Optional
 from pydantic import BaseModel, ValidationError
 
 from . import git
+from .base import (
+    Entry,
+    EntryId,
+    Metadata,
+    TagIndex,
+    Tags,
+
+    copy_tag_index,
+    add_to_tag_index,
+    generate_entry_id
+)
+
+from .system import get_system_encoding
 
 
 __all__ = (
-    "Entry",
-    "EntryId",
-    "Metadata",
     "Query",
 
     "filter_entries",
-    "generate_entry_id",
     "get_carrier_file",
     "get_entry_id_from_metadata_file",
     "get_metadata_file",
@@ -26,28 +34,12 @@ __all__ = (
 )
 
 
-DEFAULT_ENCODING = "utf-8"
-METADATA_FILE_SUFFIX = ".meta"
-
-
-type EntryId = str
-
-
-class Metadata(BaseModel):
-    name: str
-    tags: list[str]
-
-
-type Entry = tuple[EntryId, Metadata]
+_METADATA_FILE_SUFFIX = ".meta"
 
 
 class Query(BaseModel):
     name: Optional[str]
-    tags: list[str]
-
-
-def generate_entry_id() -> EntryId:
-    return str(uuid.uuid4())
+    tags: Tags
 
 
 def get_carrier_file(root: Path, entry_id: EntryId) -> Path:
@@ -55,7 +47,7 @@ def get_carrier_file(root: Path, entry_id: EntryId) -> Path:
 
 
 def get_metadata_file(root: Path, entry_id: EntryId) -> Path:
-    return (root / entry_id).with_suffix(METADATA_FILE_SUFFIX)
+    return (root / entry_id).with_suffix(_METADATA_FILE_SUFFIX)
 
 
 def get_entry_id_from_metadata_file(metadata_file: Path) -> EntryId:
@@ -65,7 +57,7 @@ def get_entry_id_from_metadata_file(metadata_file: Path) -> EntryId:
 def list_metadata_files(root: Path) -> Iterator[Path]:
     return (
         x for x in root.iterdir()
-        if tuple(x.suffixes) == (METADATA_FILE_SUFFIX,)
+        if tuple(x.suffixes) == (_METADATA_FILE_SUFFIX,)
     )
 
 
@@ -74,7 +66,7 @@ def list_entries(root: Path) -> Iterator[Entry]:
         try:
             metadata = Metadata.model_validate_json(
                 metadata_file.read_text(
-                    encoding=DEFAULT_ENCODING
+                    encoding=get_system_encoding()
                 )
             )
         except ValidationError:
@@ -110,7 +102,12 @@ def filter_entries(query: Query, entries: Iterator[Entry]) -> Iterator[Entry]:
         yield entry
 
 
-def import_file(root: Path, external_file: Path, metadata: Metadata) -> Entry:
+def import_file(
+    root: Path,
+    tag_index: TagIndex,
+    external_file: Path,
+    metadata: Metadata
+) -> tuple[TagIndex, Entry]:
     entry_id = generate_entry_id()
     carrier_file = get_carrier_file(root, entry_id)
     metadata_file = get_metadata_file(root, entry_id)
@@ -120,7 +117,7 @@ def import_file(root: Path, external_file: Path, metadata: Metadata) -> Entry:
         metadata.model_dump_json(
             indent=2
         ),
-        encoding=DEFAULT_ENCODING
+        encoding=get_system_encoding()
     )
 
     try:
@@ -131,4 +128,9 @@ def import_file(root: Path, external_file: Path, metadata: Metadata) -> Entry:
     except git.NotInstalledError:
         pass
 
-    return (entry_id, metadata)
+    entry = (entry_id, metadata)
+    tag_index = copy_tag_index(tag_index)
+
+    add_to_tag_index(tag_index, entry_id, metadata.tags)
+
+    return (tag_index, entry)
