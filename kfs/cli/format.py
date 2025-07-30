@@ -19,8 +19,8 @@ def print_entries(console: Console, entries: Iterable[Entry]) -> None:
     table.add_column("Tags")
 
     for entry in entries:
-        path, metadata = entry
+        entry_id, metadata = entry
 
-        table.add_row(path.stem, metadata.name, ", ".join(metadata.tags))
+        table.add_row(entry_id, metadata.name, ", ".join(metadata.tags))
 
     console.print(table)

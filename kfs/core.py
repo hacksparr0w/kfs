@@ -11,12 +11,14 @@ from . import git
 
 __all__ = (
     "Entry",
+    "EntryId",
     "Metadata",
     "Query",
 
     "filter_entries",
-    "generate_carrier_file_name",
+    "generate_entry_id",
     "get_carrier_file",
+    "get_entry_id_from_metadata_file",
     "get_metadata_file",
     "import_file",
     "list_entries",
@@ -28,12 +30,15 @@ DEFAULT_ENCODING = "utf-8"
 METADATA_FILE_SUFFIX = ".meta"
 
 
+type EntryId = str
+
+
 class Metadata(BaseModel):
     name: str
     tags: list[str]
 
 
-type Entry = tuple[Path, Metadata]
+type Entry = tuple[EntryId, Metadata]
 
 
 class Query(BaseModel):
@@ -41,20 +46,27 @@ class Query(BaseModel):
     tags: list[str]
 
 
-def generate_carrier_file_name() -> str:
+def generate_entry_id() -> EntryId:
     return str(uuid.uuid4())
 
 
-def get_carrier_file(metadata_file: Path) -> Path:
-    return metadata_file.with_suffix("")
+def get_carrier_file(root: Path, entry_id: EntryId) -> Path:
+    return root / entry_id
 
 
-def get_metadata_file(carrier_file: Path) -> Path:
-    return carrier_file.with_suffix(METADATA_FILE_SUFFIX)
+def get_metadata_file(root: Path, entry_id: EntryId) -> Path:
+    return (root / entry_id).with_suffix(METADATA_FILE_SUFFIX)
+
+
+def get_entry_id_from_metadata_file(metadata_file: Path) -> EntryId:
+    return metadata_file.stem
 
 
 def list_metadata_files(root: Path) -> Iterator[Path]:
-    return (x for x in root.iterdir() if x.suffix == METADATA_FILE_SUFFIX)
+    return (
+        x for x in root.iterdir()
+        if tuple(x.suffixes) == (METADATA_FILE_SUFFIX,)
+    )
 
 
 def list_entries(root: Path) -> Iterator[Entry]:
@@ -68,12 +80,13 @@ def list_entries(root: Path) -> Iterator[Entry]:
         except ValidationError:
             continue
 
-        carrier_file = get_carrier_file(metadata_file)
+        entry_id = get_entry_id_from_metadata_file(metadata_file)
+        carrier_file = get_carrier_file(root, entry_id)
 
         if not carrier_file.exists():
             continue
 
-        yield (carrier_file, metadata)
+        yield (entry_id, metadata)
 
 
 def filter_entries(query: Query, entries: Iterator[Entry]) -> Iterator[Entry]:
@@ -85,7 +98,7 @@ def filter_entries(query: Query, entries: Iterator[Entry]) -> Iterator[Entry]:
         return True
 
     for entry in entries:
-        carrier_file, metadata = entry
+        entry_id, metadata = entry
 
         if query.name is not None:
             if metadata.name != query.name:
@@ -98,8 +111,9 @@ def filter_entries(query: Query, entries: Iterator[Entry]) -> Iterator[Entry]:
 
 
 def import_file(root: Path, external_file: Path, metadata: Metadata) -> Entry:
-    carrier_file = root / generate_carrier_file_name()
-    metadata_file = get_metadata_file(carrier_file)
+    entry_id = generate_entry_id()
+    carrier_file = get_carrier_file(root, entry_id)
+    metadata_file = get_metadata_file(root, entry_id)
 
     shutil.copy(external_file, carrier_file)
     metadata_file.write_text(
@@ -109,9 +123,12 @@ def import_file(root: Path, external_file: Path, metadata: Metadata) -> Entry:
         encoding=DEFAULT_ENCODING
     )
 
-    if git.is_repository(cwd=root) and git.check_author(cwd=root):
-        git.add(str(carrier_file.name), cwd=root)
-        git.add(str(metadata_file.name), cwd=root)
-        git.commit(f"add '{metadata.name}'", cwd=root)
+    try:
+        if git.is_repository(cwd=root) and git.check_author(cwd=root):
+            git.add(str(carrier_file.relative_to(root)), cwd=root)
+            git.add(str(metadata_file.relative_to(root)), cwd=root)
+            git.commit(f"add '{metadata.name}'", cwd=root)
+    except git.NotInstalledError:
+        pass
 
-    return (carrier_file, metadata)
+    return (entry_id, metadata)

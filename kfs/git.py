@@ -7,6 +7,7 @@ from typing import Optional
 __all__ = (
     "GitError",
     "InvalidRepositoryError",
+    "NotInstalledError",
 
     "add",
     "check_author",
@@ -26,16 +27,23 @@ class InvalidRepositoryError(GitError):
     pass
 
 
+class NotInstalledError(GitError):
+    pass
+
+
 def run(
     *args: str,
     cwd: Optional[Path] = None
 ) -> subprocess.CompletedProcess:
-    return subprocess.run(
-        ["git", *args],
-        stdout=subprocess.PIPE,
-        stderr=subprocess.PIPE,
-        cwd=cwd
-    )
+    try:
+        return subprocess.run(
+            ["git", *args],
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            cwd=cwd
+        )
+    except FileNotFoundError:
+        raise NotInstalledError
 
 
 def get_configuration(name: str, cwd: Optional[Path] = None) -> str:
@@ -45,8 +53,8 @@ def get_configuration(name: str, cwd: Optional[Path] = None) -> str:
 
 
 def check_author(cwd: Optional[Path] = None) -> bool:
-    return get_configuration("user.name", cwd=cwd) and \
-        get_configuration("user.email", cwd=cwd)
+    return bool(get_configuration("user.name", cwd=cwd)) and \
+        bool(get_configuration("user.email", cwd=cwd))
 
 
 def status(cwd: Optional[Path] = None) -> None:
