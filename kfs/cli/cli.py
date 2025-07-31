@@ -19,7 +19,7 @@ from ..cache import (
 )
 
 from ..system import ensure_system_directory
-from .format import print_entries
+from .format import print_entries, print_tag_index
 
 
 def _initialize(root: Path) -> TagIndex:
@@ -98,3 +98,22 @@ def ls(ctx, tags, name):
 
     if entries:
         print_entries(console, entries)
+
+
+@cli.command("tags")
+@click.pass_context
+def tags(ctx):
+    console = ctx.obj["console"]
+    root = ctx.obj["root"]
+
+    tag_index_cache_file = get_tag_index_cache_file(root)
+
+    if not tag_index_cache_file.exists():
+        return
+
+    tag_index = read_tag_index_cache(root)
+
+    if not tag_index:
+        return
+
+    print_tag_index(console, tag_index)
